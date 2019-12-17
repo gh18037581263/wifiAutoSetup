@@ -11,6 +11,22 @@
 #define int16 short
 #define int32 int
 
+#ifndef BOOLEAN
+typedef unsigned char   BOOLEAN;
+#endif
+
+#ifndef UINT8
+typedef unsigned char   UINT8;
+#endif
+
+#ifndef FALSE
+#define FALSE  0
+#endif
+
+#ifndef TRUE
+#define TRUE   (!FALSE)
+#endif
+
 /* direct log message to your system utils, default printf */
 extern int debug_enable;
 #define LOGE(fmt, arg...) do {if (1 | debug_enable) printf(fmt, ##arg);} while (0);

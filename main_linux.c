@@ -5,7 +5,16 @@
 #include "easy_setup.h"
 
 int killed = 0;
-int debug_enable = 0;
+int debug_enable = 1;
+
+#define WIFI_SSID_NAME_SIZE (33)
+#define WIFI_SSID_PASS_SIZE (65)
+
+static UINT8 wifi_introducer_char_ssid_value[WIFI_SSID_NAME_SIZE] = {0};
+static UINT8 wifi_introducer_char_passphrase_value[WIFI_SSID_PASS_SIZE]  = {0};
+
+static BOOLEAN wifi_introducer_ssid_name = FALSE;
+static BOOLEAN wifi_introducer_ssid_password = FALSE;
 
 void usage() {
     printf("-h: show help message\n");
@@ -27,6 +36,78 @@ void usage() {
 static void signal_handler(int sig) {
     printf("aborted\n");
     killed = 1;
+}
+/*******************************************************************************
+**
+** Function         start_wpa_supplicant
+**
+** Description      wpa supplicant
+**
+** Returns          BOOLEAN
+**
+*******************************************************************************/
+static BOOLEAN start_wpa_supplicant(void)
+{
+    FILE *fp = NULL;
+    if ((fp = fopen("/data/cfg/wpa_supplicant.conf", "w+")) == NULL)
+    {
+        LOGE("open wpa_supplicant.conf failed");
+        return FALSE;
+    }
+
+    fprintf(fp, "%s\n", "ctrl_interface=/var/run/wpa_supplicant");
+    fprintf(fp, "%s\n", "ap_scan=1");
+    fprintf(fp, "%s\n", "network={");
+    fprintf(fp, "%s%s%s\n", "ssid=\"", wifi_introducer_char_ssid_value, "\"");
+    fprintf(fp, "%s%s%s\n", "psk=\"", wifi_introducer_char_passphrase_value, "\"");
+    fprintf(fp, "%s\n", "key_mgmt=WPA-PSK");
+    fprintf(fp, "%s\n", "}");
+
+    fclose(fp);
+
+    if (-1 == system("killall wpa_supplicant;killall dhcpcd;"
+                   "ifconfig wlan0 0.0.0.0")) {
+        LOGE("killall wpa_supplicant dhcpcd failed");
+        return FALSE;
+    }
+
+    if (-1 == system("wpa_supplicant -Dnl80211 -i wlan0 "
+                   "-c /data/cfg/wpa_supplicant.conf &")) {
+        LOGE("start wpa_supplicant failed");
+        return FALSE;
+    }
+
+    if (-1 == system("sleep 1;dhcpcd wlan0 -t 0 &")) {
+        LOGE("dhcpcd failed");
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/*******************************************************************************
+**
+** Function         is_ssid_configured
+**
+** Description      Check if configured
+**
+** Returns          void
+**
+*******************************************************************************/
+static void is_ssid_configured(void)
+{
+    if (wifi_introducer_ssid_name && wifi_introducer_ssid_password)
+    {
+
+        if (!start_wpa_supplicant())
+        {
+            LOGE("start wpa_supplicant failed");
+        }
+
+        wifi_introducer_ssid_name = FALSE;
+        wifi_introducer_ssid_password = FALSE;
+        
+    }
 }
 
 int main(int argc, char* argv[])
@@ -83,18 +164,22 @@ int main(int argc, char* argv[])
     int start_time = clock();
     ret = easy_setup_query();
     if (!ret) {
-        char ssid[33]; /* ssid of 32-char length, plus trailing '\0' */
-        ret = easy_setup_get_ssid(ssid, sizeof(ssid));
+        char *ssid = wifi_introducer_char_ssid_value; /* ssid of 32-char length, plus trailing '\0' */
+        ret = easy_setup_get_ssid(ssid, sizeof(wifi_introducer_char_ssid_value));
         if (!ret) {
+            wifi_introducer_ssid_name = TRUE;
             printf("ssid: %s\n", ssid);
         }
 
-        char password[65]; /* password is 64-char length, plus trailing '\0' */
-        ret = easy_setup_get_password(password, sizeof(password));
+        char *password = wifi_introducer_char_passphrase_value; /* password is 64-char length, plus trailing '\0' */
+        ret = easy_setup_get_password(password, sizeof(wifi_introducer_char_passphrase_value));
         if (!ret) {
+            wifi_introducer_ssid_password = TRUE;
             printf("password: %s\n", password);
         }
 
+        is_ssid_configured();
+        
         uint8 protocol;
         ret = easy_setup_get_protocol(&protocol);
         if (ret) {
