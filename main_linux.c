@@ -2,7 +2,10 @@
 #include <unistd.h>
 #include <time.h>
 #include <signal.h>
+#include <stdlib.h>
 #include "easy_setup.h"
+#include "ping.h"
+#include "network_state.h"
 
 int killed = 0;
 int debug_enable = 1;
@@ -290,6 +293,29 @@ int main(int argc, char* argv[])
     /* must do this! */
     easy_setup_stop();
 
+    while(0 != connect_check()){
+        sleep(1);
+        printf("wifi connected!\n");
+    }
+    
+    int i=30;
+    while(i--){
+        sleep(1);
+        if (0 == get_ip())
+        {
+            sleep(1);
+            break;
+        }
+        printf("get_ip %ds!\n",30-i);
+    }
+
+    i = 3;
+    while(i--){
+        printf("i=%d\n",i);
+        sleep(3);
+        if(!PINGWLAN)
+            PINGWAN;
+    }
     return 0;
 }
 
