@@ -4,11 +4,11 @@ src_list := main_linux.c easy_setup_linux.c ping.c network_state.c  easy_setup/e
 obj_list := $(src_list:%.c=%.o)
 
 CFLAGS := -Ieasy_setup -Iproto
-
+LIBS = -lpthread
 .PHONY: setup
 
 setup:$(obj_list)
-	$(CC) -o $@ $^
+	$(CC) -o $@ $^ $(LIBS)
 	
 %.o:%.c
 	$(CC) -c $(CFLAGS) -o $@ $^

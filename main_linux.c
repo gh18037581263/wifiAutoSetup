@@ -3,12 +3,16 @@
 #include <time.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <string.h>
+#include <pthread.h>
+#include <errno.h>
 #include "easy_setup.h"
 #include "ping.h"
 #include "network_state.h"
 
 int killed = 0;
 int debug_enable = 1;
+pthread_t net_thread = NULL;
 
 #define WIFI_SSID_NAME_SIZE (33)
 #define WIFI_SSID_PASS_SIZE (65)
@@ -18,6 +22,10 @@ static UINT8 wifi_introducer_char_passphrase_value[WIFI_SSID_PASS_SIZE]  = {0};
 
 static BOOLEAN wifi_introducer_ssid_name = FALSE;
 static BOOLEAN wifi_introducer_ssid_password = FALSE;
+
+static uint8 network_state = WIFI_DISCONNECTED;
+
+
 
 void usage() {
     printf("-h: show help message\n");
@@ -39,6 +47,11 @@ void usage() {
 static void signal_handler(int sig) {
     printf("aborted\n");
     killed = 1;
+    if(SIGINT == sig){
+        printf("net_thread child %d canceled safefly!\n",net_thread);
+        pthread_cancel(net_thread);
+    }
+
 }
 /*******************************************************************************
 **
@@ -63,11 +76,13 @@ static BOOLEAN start_wpa_supplicant(void)
     fprintf(fp, "%s\n", "network={");
     fprintf(fp, "%s%s%s\n", "ssid=\"", wifi_introducer_char_ssid_value, "\"");
     fprintf(fp, "%s%s%s\n", "psk=\"", wifi_introducer_char_passphrase_value, "\"");
-    fprintf(fp, "%s\n", "key_mgmt=WPA-PSK");
+    //fprintf(fp, "%s\n", "key_mgmt=WPA-PSK");
     fprintf(fp, "%s\n", "}");
 
     fclose(fp);
+    fp = NULL;
 
+#if 1
     if (-1 == system("killall wpa_supplicant;killall dhcpcd;"
                    "ifconfig wlan0 0.0.0.0")) {
         LOGE("killall wpa_supplicant dhcpcd failed");
@@ -84,8 +99,102 @@ static BOOLEAN start_wpa_supplicant(void)
         LOGE("dhcpcd failed");
         return FALSE;
     }
+#else
+    char buf[1024] = {0};
+    if((fp = popen("killall wpa_supplicant;killall dhcpcd;""ifconfig wlan0 0.0.0.0","r")) == NULL){
+        LOGE("killall wpa_supplicant dhcpcd failed");
+        return FALSE;
+    }
+    while (fgets(buf,1024,fp) != NULL)
+    {
+        fprintf(stdout,"%s",buf);
+    }
+    pclose(fp);
+
+    if((fp = popen("wpa_supplicant -Dnl80211 -i wlan0 ""-c /data/cfg/wpa_supplicant.conf &","r")) == NULL){
+        LOGE("start wpa_supplicant failed");
+        return FALSE;
+    }
+    while (fgets(buf,1024,fp) != NULL)
+    {
+        fprintf(stdout,"%s",buf);
+    }
+    pclose(fp);
+
+    if((fp = popen("sleep 1;dhcpcd wlan0 -t 0 &","r")) == NULL){
+        LOGE("dhcpcd failed");
+        return FALSE;
+    }
+    while (fgets(buf,1024,fp) != NULL)
+    {
+        fprintf(stdout,"%s",buf);
+    }
+    pclose(fp);
+#endif
 
     return TRUE;
+}
+
+static int auto_start_wpa_supplicant(void)
+{
+    printf("ssid:%d psk:%d \n",wifi_introducer_ssid_name,wifi_introducer_ssid_password);
+    if (!wifi_introducer_ssid_name || !wifi_introducer_ssid_password){
+        printf("ssid psk error\n");
+        return -1;
+    }
+    printf("killall\n");
+#if 1
+    if (-1 == system("killall wpa_supplicant;killall dhcpcd;"
+                   "ifconfig wlan0 0.0.0.0")) {
+        LOGE("killall wpa_supplicant dhcpcd failed");
+        return -1;
+    }
+    printf("wpa_supplicant\n");
+    if (-1 == system("wpa_supplicant -Dnl80211 -i wlan0 "
+                   "-c /data/cfg/wpa_supplicant.conf &")) {
+        LOGE("start wpa_supplicant failed");
+        return -1;
+    }
+
+    if (-1 == system("sleep 1;dhcpcd wlan0 -t 0 &")) {
+        LOGE("dhcpcd failed");
+        return -1;
+    }
+#else
+    FILE *fp = NULL;
+    char buf[1024] = {0};
+    if((fp = popen("killall wpa_supplicant;killall dhcpcd;""ifconfig wlan0 0.0.0.0","r")) == NULL){
+        LOGE("killall wpa_supplicant dhcpcd failed");
+        return FALSE;
+    }
+    while (fgets(buf,1024,fp) != NULL)
+    {
+        fprintf(stdout,"%s",buf);
+    }
+    pclose(fp);
+
+    if((fp = popen("wpa_supplicant -Dnl80211 -i wlan0 ""-c /data/cfg/wpa_supplicant.conf &","r")) == NULL){
+        LOGE("start wpa_supplicant failed");
+        return FALSE;
+    }
+    while (fgets(buf,1024,fp) != NULL)
+    {
+        fprintf(stdout,"%s",buf);
+    }
+    pclose(fp);
+
+    if((fp = popen("sleep 1;dhcpcd wlan0 -t 0 &","r")) == NULL){
+        LOGE("dhcpcd failed");
+        return FALSE;
+    }
+    while (fgets(buf,1024,fp) != NULL)
+    {
+        fprintf(stdout,"%s",buf);
+    }
+    pclose(fp);
+#endif
+
+    return 0;
 }
 
 /*******************************************************************************
@@ -107,61 +216,21 @@ static void is_ssid_configured(void)
             LOGE("start wpa_supplicant failed");
         }
 
-        wifi_introducer_ssid_name = FALSE;
-        wifi_introducer_ssid_password = FALSE;
+        //wifi_introducer_ssid_name = FALSE;
+        //wifi_introducer_ssid_password = FALSE;
         
     }
 }
 
-int main(int argc, char* argv[])
+static int easy_setup_run(void)
 {
     int ret;
-    int len;
-    uint16 val;
-
-    for (;;) {
-        int c = getopt(argc, argv, "dhk:p:t:n:");
-        if (c < 0) {
-            break;
-        }
-
-        switch (c) {
-            case 'd':
-                debug_enable = 1;
-                break;
-            case 'k':
-                mcast_set_key(optarg);
-                neeze_set_key(optarg);
-                akiss_set_key(optarg);
-                jingdong_set_key(optarg);
-                jd_set_key(optarg);
-                ap_set_key(optarg);
-                break;
-            case 'p':
-                sscanf(optarg, "%04x", (uint32*)&val);
-                easy_setup_enable_protocols(val);
-                break;
-            case 't':
-                sscanf(optarg, "%d", (uint32*)&val);
-                easy_setup_set_timeout(val);
-                break;
-            case 'n':
-                ap_set_ssid(optarg, strlen(optarg));
-                break;
-            case 'h':
-                usage();
-                return 0;
-            default:
-                usage();
-                return 0;
-        }
-    }
-
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
 
     ret = easy_setup_start();
-    if (ret) return ret;
+    if (ret) {
+        LOGE("start easy_setup failed!\n");
+        return ret;
+    }
 
     /* query for result, blocks until mcast comes or times out */
     int start_time = clock();
@@ -212,52 +281,12 @@ int main(int argc, char* argv[])
                 printf("sender port: %d\n", port);
             }
         } else if (protocol == EASY_SETUP_PROTO_AKISS) {
-            uint8 random;
+            uint8_t random;
             ret = akiss_get_random(&random);
-            if (!ret) {
-                printf("random: 0x%02x\n", random);
+            if(!ret){
+                printf("random:0x%02x\n",random);
             }
-        } else if (protocol == EASY_SETUP_PROTO_CHANGHONG) {
-            uint8 sec;
-            ret = changhong_get_sec_mode(&sec);
-            if (!ret) {
-                printf("sec mode: 0x%02x\n", sec);
-            }
-        } else if (protocol == EASY_SETUP_PROTO_JINGDONG) {
-            uint8 sec;
-            ret = jingdong_get_sec_mode(&sec);
-            if (!ret) {
-                printf("sec mode: 0x%02x\n", sec);
-            }
-        } else if (protocol == EASY_SETUP_PROTO_JD) {
-            uint8 crc;
-            ret = jd_get_crc(&crc);
-            if (!ret) {
-                printf("crc: 0x%02x\n", crc);
-            }
-
-            uint32 ip;
-            ret = jd_get_ip(&ip);
-            if (!ret) {
-                printf("ip: 0x%08x\n", ip);
-            }
-
-            uint16 port;
-            ret = jd_get_port(&port);
-            if (!ret) {
-                printf("port: 0x%04x\n", port);
-            }
-        } else if (protocol == EASY_SETUP_PROTO_XIAOYI) {
-            uint8 buf[128];
-            uint8 len = sizeof(buf);
-            ret = xiaoyi_get_buffer(&len, buf);
-            if (!ret) {
-                printf("buf(%d) - ", len);
-                int i;
-                for (i=0; i<len; i++) printf("%02x ", buf[i]);
-                printf("\n");
-            }
-        } else if (protocol == EASY_SETUP_PROTO_AP) {
+        }else if (protocol == EASY_SETUP_PROTO_AP) {
             char ip[16]; /* ipv4 max length */
             ret = ap_get_sender_ip(ip, sizeof(ip));
             if (!ret) {
@@ -271,7 +300,7 @@ int main(int argc, char* argv[])
             }
         }
 
-#if 0
+#if 1
         /* if easy_setup_get_security() returns -1, try it more times */
         int tries = 3;
         while (tries--) {
@@ -293,12 +322,44 @@ int main(int argc, char* argv[])
     /* must do this! */
     easy_setup_stop();
 
-    while(0 != connect_check()){
-        sleep(1);
-        printf("wifi connected!\n");
+    if (wifi_introducer_ssid_name && wifi_introducer_ssid_password)
+        return 0;
+    else
+    {
+        return -1;
     }
     
-    int i=30;
+}
+
+void read_wifi_config(void)
+{
+    strcpy(wifi_introducer_char_ssid_value, get_string_from_ini("network", "ssid", NETWORK_CONFIG_ADDR));
+    printf("ssid=%s",wifi_introducer_char_ssid_value);
+    if(strlen(wifi_introducer_char_ssid_value))
+        wifi_introducer_ssid_name = TRUE;
+    strcpy(wifi_introducer_char_passphrase_value, get_string_from_ini("network", "psk", NETWORK_CONFIG_ADDR));
+    printf("ssid=%s",wifi_introducer_char_passphrase_value);
+    if(strlen(wifi_introducer_char_passphrase_value))
+        wifi_introducer_ssid_password = TRUE;
+
+}
+
+int network_check()
+{
+    int i=20;
+    while((i) && (0 != connect_check())){
+        i--;
+        sleep(1);  
+    }
+    if(i <= 0){
+        network_state = WIFI_DISCONNECTED;
+        return -1;
+    }
+    printf("wifi connected%d!\n",i);
+    if(network_state == WIFI_DISCONNECTED)
+        network_state = WIFI_CONNECTED;
+
+    i=2;
     while(i--){
         sleep(1);
         if (0 == get_ip())
@@ -306,16 +367,120 @@ int main(int argc, char* argv[])
             sleep(1);
             break;
         }
-        printf("get_ip %ds!\n",30-i);
+        printf("get_ip %ds!\n",20-i);
     }
 
-    i = 3;
-    while(i--){
-        printf("i=%d\n",i);
-        sleep(3);
-        if(!PINGWLAN)
-            PINGWAN;
+    if(!PINGWAN){
+        network_state = NET_CONNECTED;
+        return 0;
     }
+    else
+    {
+        network_state = NET_DISCONNECTED;
+        return -1;
+    }
+    
+
+}
+
+void* network_fun(void* arg){
+    int ret;
+    while(1){
+        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,NULL);
+        pthread_testcancel();
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,NULL);
+
+        network_check();
+        switch (network_state)
+        {
+        case WIFI_DISCONNECTED:
+            printf("WIFI_DISCONNECTED\n");
+            int i = 2;
+            while(i--){
+                ret = auto_start_wpa_supplicant();
+                if(!ret)break;
+            }
+
+            break;
+        case WIFI_CONNECTED:
+            printf("WIFI_CONNECTED\n");
+            break;
+        case NET_DISCONNECTED:
+            printf("NET_DISCONNECTED\n");
+            break;
+        case NET_CONNECTED:
+            printf("NET_CONNECTED\n");
+            break;
+        default:
+            break;
+        }
+        sleep(60);
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    int ret = -1;
+    int len;
+    uint16 val;
+
+    for (;;) {
+        int c = getopt(argc, argv, "dhk:p:t:n:");
+        if (c < 0) {
+            break;
+        }
+
+        switch (c) {
+            case 'd':
+                debug_enable = 1;
+                break;
+            case 'k':
+                mcast_set_key(optarg);
+                neeze_set_key(optarg);
+                akiss_set_key(optarg);
+                jingdong_set_key(optarg);
+                jd_set_key(optarg);
+                ap_set_key(optarg);
+                break;
+            case 'p':
+                sscanf(optarg, "%04x", (uint32*)&val);
+                easy_setup_enable_protocols(val);
+                break;
+            case 't':
+                sscanf(optarg, "%d", (uint32*)&val);
+                easy_setup_set_timeout(val);
+                break;
+            case 'n':
+                ap_set_ssid(optarg, strlen(optarg));
+                break;
+            case 'h':
+                usage();
+                return 0;
+            default:
+                usage();
+                return 0;
+        }
+    }
+    setuid(getpid());
+    signal(SIGINT, signal_handler);
+    //signal(SIGTERM, signal_handler);
+
+    read_wifi_config();
+    ret = auto_start_wpa_supplicant();
+    printf("auto_start_wpa_supplicant ret = %d\n",ret);
+    while (ret)
+    {
+        printf("easy_setup_running!\n");
+        ret = easy_setup_run();
+        sleep(1);
+    }
+    
+    ret = pthread_create(&net_thread,NULL,network_fun,NULL);
+    if(ret != NULL){
+        printf("network_thread start!");
+        pthread_join(net_thread,NULL);
+    }
+    pthread_exit(NULL);
     return 0;
 }
 

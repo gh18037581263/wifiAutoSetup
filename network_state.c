@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdarg.h>
 #include "network_state.h"
 #include "ping.h"
  
@@ -24,7 +25,88 @@
 const char *test_domain = "www.baidu.com";
 const char *test_eth = "wlan0";
 
-int connect_check()
+
+//read string from config file
+char *get_string_from_ini(char *title, char *key, char *filename)
+{
+    FILE *fp;
+    char szLine[1024];
+    static char tmpstr[1024];
+    int rtnval;
+    int i = 0;
+    int flag = 0;
+    char *tmp;
+
+    if ((fp = fopen(filename, "r")) == NULL)
+    {
+        perror("fopen()");
+        return "";
+    }
+
+    while (!feof(fp))
+    {
+        rtnval = fgetc(fp);
+
+        if (rtnval == EOF)
+        {
+            break;
+        }
+        else
+        {
+            szLine[i++] = rtnval;
+        }
+
+        if (rtnval == '\n')
+        {
+            szLine[--i] = '\n';
+            i = 0;
+            tmp = strchr(szLine, '=');
+
+            if ((tmp != NULL) && (flag == 1))
+            {
+                if (strstr(szLine, key) != NULL)
+                {
+					//comment
+                    if ('#' == szLine[0]);
+                    else if ('/' == szLine[0] && '/' == szLine[1]);
+                    else
+                    {
+						//local key position
+                        strcpy(tmpstr, tmp + 1);
+                        fclose(fp);
+						//printf("tmpstr:%s\n",tmpstr);
+                        return tmpstr;
+                    }
+                }
+            }
+            else
+            {
+                //strcpy(tmpstr, "[");
+                strcpy(tmpstr, title);
+                strcat(tmpstr, "=");
+				//printf("tmpstr:%s\n",tmpstr);
+                if (strncmp(tmpstr, szLine, strlen(tmpstr)) == 0)
+                {
+					//encounter title
+                    flag = 1;
+                }
+            }
+            memset(szLine,0,sizeof(szLine));
+	}
+	
+    }
+
+    fclose(fp);
+    return "";
+}
+
+int get_int_from_ini(char *title, char *key, char *filename)
+{
+    return atoi(get_string_from_ini(title, key, filename));
+}
+
+
+int connect_check(void)
 {
 	
 	int net_fd;
@@ -35,13 +117,14 @@ int connect_check()
 	{
 	
 		printf("open err\n");
-		return 0;
+		return -1;
 	}
 	
 	printf("open success\n");
 	memset(statue,0,sizeof(statue));
     int ret=read(net_fd,statue,10);
     printf("statue is %s",statue);
+	close(net_fd);
 	if(NULL!=strstr(statue,"up"))
 	{
 		printf("on line\n");
@@ -57,7 +140,7 @@ int connect_check()
 		printf("unknown err\n");
 		return -1;
 	}
-
+	return -1;
 }
 
  
@@ -256,8 +339,8 @@ int get_ip(){
 	char ip[IP_SIZE];
     char mac[MAC_SIZE];
 
-    if(0 != get_ip_by_domain(test_domain, ip))
-		return -1;
+    get_ip_by_domain(test_domain, ip);
+
     printf("%s ip: %s\n", test_domain, ip);
 
     if(0 != get_local_mac(test_eth, mac))

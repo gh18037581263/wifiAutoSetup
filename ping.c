@@ -77,12 +77,12 @@ int ping(char *argv)
              fprintf(stderr, "send ping package %d error, %s\n", i, strerror(errno));
              continue ;
         }
-        printf("sendto ! \n");
+ 
         if((recvDataLen = recvfrom(sockfd, recvbuf, sizeof(recvbuf), 0, (struct sockaddr *)&recvsock, &sockaddr_len)) == -1){
             fprintf(stderr, "recvmsg error, %s\n", strerror(errno));
             continue;
         }
-        printf("recvfrom ! \n");
+
         if(0 != decodepack(recvbuf, recvDataLen)){
             printf("decodepack error! \n");
             return -1;
