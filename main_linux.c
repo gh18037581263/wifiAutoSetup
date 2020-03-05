@@ -47,7 +47,7 @@ void usage() {
 static void signal_handler(int sig) {
     printf("aborted\n");
     killed = 1;
-    if(SIGINT == sig){
+    if(SIGINT == sig || SIGTERM == sig){
         printf("net_thread child %d canceled safefly!\n",net_thread);
         pthread_cancel(net_thread);
     }
@@ -65,7 +65,7 @@ static void signal_handler(int sig) {
 static BOOLEAN start_wpa_supplicant(void)
 {
     FILE *fp = NULL;
-    if ((fp = fopen("/data/cfg/wpa_supplicant.conf", "w+")) == NULL)
+    if ((fp = fopen("/etc/wpa_supplicant.conf", "w+")) == NULL)
     {
         LOGE("open wpa_supplicant.conf failed");
         return FALSE;
@@ -90,7 +90,7 @@ static BOOLEAN start_wpa_supplicant(void)
     }
 
     if (-1 == system("wpa_supplicant -Dnl80211 -i wlan0 "
-                   "-c /data/cfg/wpa_supplicant.conf &")) {
+                   "-c /etc/wpa_supplicant.conf &")) {
         LOGE("start wpa_supplicant failed");
         return FALSE;
     }
@@ -111,7 +111,7 @@ static BOOLEAN start_wpa_supplicant(void)
     }
     pclose(fp);
 
-    if((fp = popen("wpa_supplicant -Dnl80211 -i wlan0 ""-c /data/cfg/wpa_supplicant.conf &","r")) == NULL){
+    if((fp = popen("wpa_supplicant -Dnl80211 -i wlan0 ""-c /etc/wpa_supplicant.conf &","r")) == NULL){
         LOGE("start wpa_supplicant failed");
         return FALSE;
     }
@@ -151,7 +151,7 @@ static int auto_start_wpa_supplicant(void)
     }
     printf("wpa_supplicant\n");
     if (-1 == system("wpa_supplicant -Dnl80211 -i wlan0 "
-                   "-c /data/cfg/wpa_supplicant.conf &")) {
+                   "-c /etc/wpa_supplicant.conf &")) {
         LOGE("start wpa_supplicant failed");
         return -1;
     }
@@ -173,7 +173,7 @@ static int auto_start_wpa_supplicant(void)
     }
     pclose(fp);
 
-    if((fp = popen("wpa_supplicant -Dnl80211 -i wlan0 ""-c /data/cfg/wpa_supplicant.conf &","r")) == NULL){
+    if((fp = popen("wpa_supplicant -Dnl80211 -i wlan0 ""-c /etc/wpa_supplicant.conf &","r")) == NULL){
         LOGE("start wpa_supplicant failed");
         return FALSE;
     }
@@ -461,9 +461,8 @@ int main(int argc, char* argv[])
                 return 0;
         }
     }
-    setuid(getpid());
     signal(SIGINT, signal_handler);
-    //signal(SIGTERM, signal_handler);
+    signal(SIGTERM, signal_handler);
 
     read_wifi_config();
     ret = auto_start_wpa_supplicant();
