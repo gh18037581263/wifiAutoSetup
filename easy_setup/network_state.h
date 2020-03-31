@@ -9,7 +9,7 @@ enum {
     NET_CONNECTED,
 };
 
-#define NETWORK_CONFIG_ADDR "/data/cfg/wpa_supplicant.conf"
+#define NETWORK_CONFIG_ADDR "/etc/wpa_supplicant.conf"
 
 
 char *get_string_from_ini(char *title, char *key, char *filename);

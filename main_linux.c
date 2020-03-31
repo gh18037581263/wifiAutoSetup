@@ -469,6 +469,8 @@ int main(int argc, char* argv[])
     printf("auto_start_wpa_supplicant ret = %d\n",ret);
     while (ret)
     {
+        if(killed)
+            pthread_exit(NULL);
         printf("easy_setup_running!\n");
         ret = easy_setup_run();
         sleep(1);
