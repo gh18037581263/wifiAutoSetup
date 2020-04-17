@@ -18,33 +18,23 @@
 #include <unistd.h>
 #include <netinet/ip_icmp.h>
 #include <sys/time.h>
+#include "network_state.h"
 
 char sendbuf[1024];          // 用来存放将要发送的ip数据包
 struct sockaddr_in sockaddr, recvsock;
 int sockaddr_len = sizeof(struct sockaddr);
 struct hostent *host;
-char routeIP[64] = "192.168.1.1";
+char routeIP[24] = "192.168.1.1";
+int sockfd = -1;
 
+void closesocket(void){
+    close(sockfd);
+    sockfd = -1;
+}
 
-int ping(char *argv)
-{
- 
-    int on = 1;
-    int pid;
-    int psend = 0, precv = 0;
-    int sockfd;
-
-    memset(&sockaddr, 0, sizeof(struct sockaddr));
-    if((sockaddr.sin_addr.s_addr = inet_addr(argv)) == INADDR_NONE){
-        // 说明输入的主机名不是点分十进制,采用域名方式解析
-        if((host = gethostbyname(argv)) == NULL){
-            fprintf(stderr, "ping %s , 未知的名称!\n", argv);
-            return -1;
-        }
-        sockaddr.sin_addr = *(struct in_addr *)(host->h_addr);
-    }
-    sockaddr.sin_family = AF_INET;
-
+int set_icmp_socket(void){
+    if(-1 != sockfd)
+        return 0;
 
     // 创建原始套接字 SOCK_RAW 协议类型 IPPROTO_ICMP
     if((sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) == -1){
@@ -55,10 +45,49 @@ int ping(char *argv)
     struct timeval timeout;
     timeout.tv_sec = 1;
     timeout.tv_usec = 0;
-    if(setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout)) == -1){
-        printf("set recv timeout error!\n");
+    if(setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout, sizeof(timeout)) == -1){
+        printf("set sent timeout error!\n");
+        closesocket();
         return -1;
     }
+    if(setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout)) == -1){
+        printf("set recv timeout error!\n");
+        closesocket();
+        return -1;
+    }
+    return 0;
+}
+
+int ping(const char *argv)
+{
+ 
+    int on = 1;
+    int pid;
+    int psend = 0, precv = 0;
+    static char whereto[24];
+    
+
+    struct hostent *he;
+    char hostname[20] = {0};
+    gethostname(hostname,sizeof(hostname));
+    he = gethostbyname(hostname);
+    printf("hostname = %s ",hostname);
+    printf("%s\n",inet_ntoa(*(struct in_addr*)(he->h_addr)));
+
+    if(strcmp(whereto,argv) != 0){
+        memset(&sockaddr, 0, sizeof(struct sockaddr));
+        if((sockaddr.sin_addr.s_addr = inet_addr(argv)) == INADDR_NONE){
+        // 说明输入的主机名不是点分十进制,采用域名方式解析
+        if((host = gethostbyname(argv)) == NULL){
+            fprintf(stderr, "ping %s , 未知的名称!\n", argv);
+            return -1;
+        }
+        sockaddr.sin_addr = *(struct in_addr *)(host->h_addr);
+        }
+        sockaddr.sin_family = AF_INET;
+        memcpy(whereto,argv,sizeof(argv));
+    }
+
 
     //setuid(getpid());
     pid = getpid();
@@ -95,9 +124,11 @@ int ping(char *argv)
         usleep(100000);
     }
 
-    if(!haveRespons)
+    if(!haveRespons){     
         return -1;
+    }
 
+    
     return 0;
 }
 
@@ -181,5 +212,23 @@ uint16 checksum(unsigned char *buf, int len){
     sum+=(sum>>16);
 
     return ~sum;
+}
+
+
+int get_route_IP(void){
+    int ret = -1;
+    int i = 0;
+    FILE *fp = popen("route -n | awk \'{print $2}\' | sed -n \"3p\"", "r");
+    if(fp != NULL)
+        memset(routeIP,0,sizeof(routeIP));
+    while (NULL != fgets(routeIP, 23, fp)) //逐行读取执行结果并打印
+    {
+        printf("route IP: %s %u", routeIP,IPStrToInt(routeIP));
+        if(IPStrToInt(routeIP) != 0)
+            ret = 0; 
+    }
+    pclose(fp); //关闭返回的文件指针，注意不是用fclose噢
+
+    return ret;
 }
 

@@ -108,7 +108,9 @@ int get_int_from_ini(char *title, char *key, char *filename)
 
 int connect_check(void)
 {
-	
+#if 1
+    return get_route_IP();
+#else
 	int net_fd;
 	char statue[20];
 	
@@ -141,6 +143,7 @@ int connect_check(void)
 		return -1;
 	}
 	return -1;
+#endif
 }
 
  
@@ -301,7 +304,7 @@ unsigned int IPStrToInt(const char *ip)
 	
 	while (*pEnd != '\0')
 	{
-		while (*pEnd!='.' && *pEnd!='\0')
+		while (*pEnd!='.' && *pEnd!='\0' && *pEnd!='\n')
 		{
 			pEnd++;
 		}
@@ -339,9 +342,9 @@ int get_ip(){
 	char ip[IP_SIZE];
     char mac[MAC_SIZE];
 
-    get_ip_by_domain(test_domain, ip);
+    //get_ip_by_domain(test_domain, ip);
 
-    printf("%s ip: %s\n", test_domain, ip);
+    //printf("%s ip: %s\n", test_domain, ip);
 
     if(0 != get_local_mac(test_eth, mac))
 		return -1;
@@ -355,7 +358,7 @@ int get_ip(){
 	IP_32 &= 0xFFFFFF01;
 	IntToStr(IP_32,ip);
 	printf("route ip: %s\n", ip); 
-	memcpy(routeIP,ip,sizeof(ip));
+	//memcpy(routeIP,ip,sizeof(ip));
 
     return 0;
 }

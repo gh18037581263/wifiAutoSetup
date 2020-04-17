@@ -6,6 +6,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <errno.h>
+#include <sys/resource.h>
 #include "easy_setup.h"
 #include "ping.h"
 #include "network_state.h"
@@ -50,6 +51,7 @@ static void signal_handler(int sig) {
     if(SIGINT == sig || SIGTERM == sig){
         printf("net_thread child %d canceled safefly!\n",net_thread);
         pthread_cancel(net_thread);
+        closesocket();
     }
 
 }
@@ -135,12 +137,63 @@ static BOOLEAN start_wpa_supplicant(void)
     return TRUE;
 }
 
+static int get_wpa_supplicant_pid(void){
+    pid_t pid = -1;
+    FILE *fp = popen("ps -e | grep \'wpa_supplicant\' | awk \'{print $1}\'", "r");
+    char buffer[20] = {0};
+    while (NULL != fgets(buffer, 20, fp)) //逐行读取执行结果并打印
+    {
+        pid = atoi(buffer);
+        printf("wap PID:  %s %d", buffer,pid);
+    }
+    pclose(fp); //关闭返回的文件指针，注意不是用fclose噢
+
+    return pid;
+}
+
+/*name_srt length need less 16 bytes*/
+pid_t get_task_pid(const char *name_str){
+	pid_t pid = -1;
+	char cmd[128] = {0};
+
+	sprintf(cmd,"ps -e | grep \'%s\' | awk \'{print $1}\'",name_str);
+    FILE *fp = popen(cmd, "r");
+    char buffer[24] = {0};
+    while (NULL != fgets(buffer, 24, fp)) //逐行读取执行结果并打印
+    {
+		memset(cmd,0,strlen(cmd));
+        pid = atoi(buffer);
+        printf("%s PID: %d\n", name_str,pid);
+    }
+    pclose(fp); //关闭返回的文件指针，注意不是用fclose噢
+
+    return pid;
+}
+
+static int app_ble_wifi_introducer_start(void){
+
+    if(get_task_pid("app_ble_wifi") > 0)
+        return 0;
+    if (-1 == system("mkdir -p /data/bsa/config;cd /data/bsa/config;app_ble_wifi_introducer > /data/bsa/app_ble_wifi_introducer.log &")) {
+        LOGE("app_ble_wifi_introducer failed");
+        return -1;
+    }
+    printf("app_ble_wifi_introducer_start!\n");
+    return 0;
+}
+
 static int auto_start_wpa_supplicant(void)
 {
+    static BOOLEAN first = TRUE;
     printf("ssid:%d psk:%d \n",wifi_introducer_ssid_name,wifi_introducer_ssid_password);
     if (!wifi_introducer_ssid_name || !wifi_introducer_ssid_password){
         printf("ssid psk error\n");
         return -1;
+    }
+
+    if(get_task_pid("wpa_supplicant") > 0 && first){
+        first = FALSE;
+        return 0;
     }
     printf("killall\n");
 #if 1
@@ -367,7 +420,7 @@ int network_check()
             sleep(1);
             break;
         }
-        printf("get_ip %ds!\n",20-i);
+        printf("get_ip %ds!\n",2-i);
     }
 
     if(!PINGWAN){
@@ -385,10 +438,17 @@ int network_check()
 
 void* network_fun(void* arg){
     int ret;
+    struct rlimit	rl;
+    
     while(1){
         pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,NULL);
         pthread_testcancel();
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,NULL);
+        set_icmp_socket();
+        
+        if(getrlimit(RLIMIT_NOFILE, &rl) < 0)
+        	printf(" can't get file limit\n");
+        printf("rlim_cur:%d rlim_max:%d\n",rl.rlim_cur,rl.rlim_max);
 
         network_check();
         switch (network_state)
@@ -414,7 +474,7 @@ void* network_fun(void* arg){
         default:
             break;
         }
-        sleep(60);
+        sleep(1);
     }
 }
 
@@ -463,6 +523,9 @@ int main(int argc, char* argv[])
     }
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+    signal(SIGCHLD, SIG_DFL);
+    signal(SIGTTOU, SIG_DFL);
+    signal(SIGHUP, SIG_DFL);
 
     read_wifi_config();
     ret = auto_start_wpa_supplicant();
@@ -472,6 +535,7 @@ int main(int argc, char* argv[])
         if(killed)
             pthread_exit(NULL);
         printf("easy_setup_running!\n");
+        app_ble_wifi_introducer_start();
         ret = easy_setup_run();
         sleep(1);
     }
