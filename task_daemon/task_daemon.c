@@ -34,7 +34,7 @@ int main(){
 		get_task_pid("wpa_supplicant");
 		get_task_pid("dhcpcd");
 		if(-1 == get_task_pid("setup")){
-			create_task("setup -p 4 &");
+			create_task("setup -p 4 > /setup.log &");
 		}
 		if(-1 == get_task_pid("bsa_server") || -1 == get_task_pid("app_manager")){
 			create_task("bsa_ble_wifi_introducer.sh stop");
@@ -42,7 +42,7 @@ int main(){
 		}
 		get_task_pid("app_ble_wifi");
 		
-		sleep(1);
+		sleep(60);
 	}
 	close(fd);
 	exit(0);
@@ -56,7 +56,7 @@ pid_t get_task_pid(const char *name_str){
 	sprintf(cmd,"ps -e | grep \'%s\' | awk \'{print $1}\'",name_str);
     FILE *fp = popen(cmd, "r");
     char buffer[24] = {0};
-    while (NULL != fgets(buffer, 24, fp)) //逐行读取执行结果并打印
+    while (NULL != fgets(buffer, 23, fp)) //逐行读取执行结果并打印
     {
 		memset(cmd,0,strlen(cmd));
         pid = atoi(buffer);

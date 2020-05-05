@@ -159,7 +159,7 @@ pid_t get_task_pid(const char *name_str){
 	sprintf(cmd,"ps -e | grep \'%s\' | awk \'{print $1}\'",name_str);
     FILE *fp = popen(cmd, "r");
     char buffer[24] = {0};
-    while (NULL != fgets(buffer, 24, fp)) //逐行读取执行结果并打印
+    while (NULL != fgets(buffer, 23, fp)) //逐行读取执行结果并打印
     {
 		memset(cmd,0,strlen(cmd));
         pid = atoi(buffer);
@@ -382,9 +382,10 @@ static int easy_setup_run(void)
         return -1;
     }
     
+    return -1;
 }
 
-void read_wifi_config(void)
+int read_wifi_config(void)
 {
     strcpy(wifi_introducer_char_ssid_value, get_string_from_ini("network", "ssid", NETWORK_CONFIG_ADDR));
     printf("ssid=%s",wifi_introducer_char_ssid_value);
@@ -395,11 +396,17 @@ void read_wifi_config(void)
     if(strlen(wifi_introducer_char_passphrase_value))
         wifi_introducer_ssid_password = TRUE;
 
+    if (wifi_introducer_ssid_name && wifi_introducer_ssid_password)
+        return 0;
+    else
+        return -1;
+    
+    return -1;
 }
 
 int network_check()
 {
-    int i=20;
+    int i=10;
     while((i) && (0 != connect_check())){
         i--;
         sleep(1);  
@@ -438,7 +445,7 @@ int network_check()
 
 void* network_fun(void* arg){
     int ret;
-    struct rlimit	rl;
+    //struct rlimit	rl;
     
     while(1){
         pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,NULL);
@@ -446,18 +453,20 @@ void* network_fun(void* arg){
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,NULL);
         set_icmp_socket();
         
-        if(getrlimit(RLIMIT_NOFILE, &rl) < 0)
-        	printf(" can't get file limit\n");
-        printf("rlim_cur:%d rlim_max:%d\n",rl.rlim_cur,rl.rlim_max);
+        //if(getrlimit(RLIMIT_NOFILE, &rl) < 0)
+        //	printf(" can't get file limit\n");
+        //printf("rlim_cur:%d rlim_max:%d\n",rl.rlim_cur,rl.rlim_max);
 
         network_check();
         switch (network_state)
         {
         case WIFI_DISCONNECTED:
             printf("WIFI_DISCONNECTED\n");
+            closesocket();
             int i = 2;
             while(i--){
                 ret = auto_start_wpa_supplicant();
+                printf("auto_start_wpa_supplicant\n");
                 if(!ret)break;
             }
 
@@ -466,6 +475,7 @@ void* network_fun(void* arg){
             printf("WIFI_CONNECTED\n");
             break;
         case NET_DISCONNECTED:
+            closesocket();
             printf("NET_DISCONNECTED\n");
             break;
         case NET_CONNECTED:
@@ -474,7 +484,7 @@ void* network_fun(void* arg){
         default:
             break;
         }
-        sleep(1);
+        sleep(60);
     }
 }
 
@@ -537,6 +547,8 @@ int main(int argc, char* argv[])
         printf("easy_setup_running!\n");
         app_ble_wifi_introducer_start();
         ret = easy_setup_run();
+        if(ret)
+            ret = read_wifi_config();
         sleep(1);
     }
     

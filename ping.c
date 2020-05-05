@@ -93,8 +93,8 @@ int ping(const char *argv)
     pid = getpid();
 
     // 发包操作
-    printf("PINGing %s %d data send.\n", argv, ICMP_DATA_LEN);
-    int i = 1;
+    printf("PINGing %s %d data send.socket %d\n", argv, ICMP_DATA_LEN,socket);
+    static int i = 1;
     int recvDataLen;
     int sendDatalen;
     char recvbuf[1024];
@@ -102,6 +102,7 @@ int ping(const char *argv)
     int haveRespons = 0;
     while(ping_time--){
         int packlen = packping(i++);
+        if(i > 512)i=1;
         if((sendDatalen = sendto(sockfd, sendbuf, packlen,0, (struct sockaddr *)&sockaddr, sizeof(sockaddr))) < 0){
              fprintf(stderr, "send ping package %d error, %s\n", i, strerror(errno));
              continue ;
@@ -223,7 +224,7 @@ int get_route_IP(void){
         memset(routeIP,0,sizeof(routeIP));
     while (NULL != fgets(routeIP, 23, fp)) //逐行读取执行结果并打印
     {
-        printf("route IP: %s %u", routeIP,IPStrToInt(routeIP));
+        printf("route IP: %s %u\n", routeIP,IPStrToInt(routeIP));
         if(IPStrToInt(routeIP) != 0)
             ret = 0; 
     }
